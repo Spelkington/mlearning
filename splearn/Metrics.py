@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import multiprocessing as mp
 
 # def new_function(
 #         arg1: type,
@@ -54,7 +55,10 @@ def accuracy_score(
 
     return accuracy
 
-def wt_unique(elements, weights):
+def wt_unique(
+    elements: np.array, 
+    weights: np.array
+):
     '''
     Calculates the unique values in an array, along with their weighted
     count.
@@ -76,7 +80,7 @@ def wt_unique(elements, weights):
     for i, e in enumerate(uniques):
         filter = (elements == e).astype(int)
         filt_wts = weights * filter
-        e_weights[i] = sum(filt_wts)
+        e_weights[i] = np.sum(filt_wts)
 
     return uniques, e_weights
     
@@ -135,19 +139,16 @@ def entropy(target, weights):
 
     # Get the individual classes and counts
     # for every unique element of the target
-    classes, e_weights = wt_unique(target, weights)
+    _, e_weights = wt_unique(target, weights)
 
     # Calculate the probability of each class
     # by dividing all the counts by the length
     # of the vector
     probs = e_weights / sum(weights)
 
-    # Zip the classes and probabilities into a dictionary
-    class_probs = dict(zip(classes, probs))
-
     # Start an accumulation loop for the entropy
     ent = 0
-    for p in class_probs.values():
+    for p in probs:
         ent += p * np.log2(p)
 
     # Flip the sign and return

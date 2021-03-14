@@ -55,7 +55,22 @@ class TreeBagger:
         self,
         features: pd.DataFrame
     ):
-        pass
+
+        votes = np.zeros(len(features))
+        
+        for m in self.trees:
+
+            preds = m.predict(features)
+            preds = preds.map(self.class_dict)
+            preds = (preds - 0.5) * 2
+            
+            votes += preds
+
+        result = pd.Series((votes >= 0).astype(int))
+        result = result.map(self.binary_dict)
+
+        return result
+
 
     def __len__(self):
         return len(self.trees)

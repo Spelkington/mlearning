@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import splearn.Metrics as met
+import multiprocessing as mp
 
 class TreeNode:
     
@@ -19,7 +20,8 @@ class TreeNode:
         target: pd.Series,
         weights: pd.Series,
         gain_func,
-        depth_left = -1
+        depth_left = -1,
+        pool = None
     ):
         '''
         Trains this model based on the feature and target data provided.
@@ -54,11 +56,15 @@ class TreeNode:
         # a leaf node and set the value to whatever the majority element in
         # the targets is.
         elif depth_left == 1 or len(features.columns) == 0:
-            
-            wght_targ = pd.concat([target, weights], axis=1)
-            self.value = wght_targ.groupby(
-                by = wght_targ.columns[0]
-            ).sum()[wght_targ.columns[1]].idxmax()
+
+            e_weights = np.zeros(len(uniques))
+
+            for i, e in enumerate(uniques):
+                filt = (target == e).astype(int)
+                filt_wts = weights * filt
+                e_weights[i] = np.sum(filt_wts)
+
+            self.value = uniques[e_weights.argmax()]
             
         else:
             
@@ -69,104 +75,114 @@ class TreeNode:
             # Find the maximum gain - doing a loop is pretty shitty but I
             # couldn't remember the quickest way to find the maximum value of
             # a dictionary (:
-            curr_max = -1
-            max_key = None
-            for key, val in gains.items():
-                if val > curr_max:
-                    curr_max = val
-                    max_key = key
+            keys = np.array(list(gains.keys()))
+            vals = np.fromiter(gains.values(), dtype="float64")
+            max_val = vals.max()
+            max_key = keys[vals.argmax()]
 
-            
-            # Set the label of this node to the max gain key
-            self.label = max_key
-            
-            # In case an observation ever reaches this node but does not have
-            # a further trained node to traverse to, set the value to the
-            # majority node of this subset.
-            self.value = uniques[
-                list(counts).index(max(counts))
-            ]
-            
-            # Create node children
-            if features[self.label].dtype == "int64":
-                
-                median = np.median(features[max_key])
-                self.split = median
-                
-                filt = features[max_key] > self.split
-                
-                # Calculate feature subsets
-                top_feat = features[filt]
-                bot_feat = features[np.invert(filt)]
-                
-                top_wght = weights[filt]
-                bot_wght = weights[np.invert(filt)]
-                
-                if len(top_feat) > 0:
-                    
-                    top_feat = top_feat.drop(max_key, axis=1)
-                    top_targ = target[filt]
-                    
-                    top_child = TreeNode()
-                    top_child.train(
-                            top_feat,
-                            top_targ,
-                            top_wght,
-                            gain_func,
-                            depth_left = depth_left - 1
-                    )
-                    self.children[1] = top_child
-              
-                if len(bot_feat) > 0:
-                    
-                    bot_feat = bot_feat.drop(max_key, axis=1)
-                    bot_targ = target[np.invert(filt)]
-                    
-                    bot_child = TreeNode()
-                    bot_child.train(
-                            bot_feat,
-                            bot_targ,
-                            bot_wght,
-                            gain_func,
-                            depth_left = depth_left - 1
-                    )
-                    self.children[0] = bot_child
-                
-                
-            # Split children into nodes by unique elements
+            if max_val == 0:
+
+                e_weights = np.zeros(len(uniques))
+
+                for i, e in enumerate(uniques):
+                    filt = (target == e).astype(int)
+                    filt_wts = weights * filt
+                    e_weights[i] = np.sum(filt_wts)
+
+                self.value = uniques[e_weights.argmax()]
+
             else:
-            
-                # Get the unique elements of the maximum gain column
-                elements = features[max_key].unique()
 
-                # Create a new child for every element within the
-                # gain-iest feature
-                for e in elements:
-                    new_child = TreeNode()
-
-                    # Filter the subset by this element in the column
-                    filt = features[max_key] == e
-
-                    # Subset the features and target off of the filter,
-                    # and drop the maximum gain column
-                    sub_feat = features[filt]
-                    sub_feat = sub_feat.drop(max_key, axis=1)
+                # Set the label of this node to the max gain key
+                self.label = max_key
+                
+                # In case an observation ever reaches this node but does not have
+                # a further trained node to traverse to, set the value to the
+                # majority node of this subset.
+                self.value = uniques[
+                    list(counts).index(max(counts))
+                ]
+                
+                # Create node children
+                if features[self.label].dtype == "int64":
                     
-                    sub_targ = target [filt]
-                    sub_wght = weights[filt]
+                    median = np.median(features[max_key])
+                    self.split = median
+                    
+                    filt = features[max_key] > self.split
+                    
+                    # Calculate feature subsets
+                    top_feat = features[filt]
+                    bot_feat = features[np.invert(filt)]
+                    
+                    top_wght = weights[filt]
+                    bot_wght = weights[np.invert(filt)]
+                    
+                    if len(top_feat) > 0:
+                        
+                        top_feat = top_feat.drop(max_key, axis=1)
+                        top_targ = target[filt]
+                        
+                        top_child = TreeNode()
+                        top_child.train(
+                                top_feat,
+                                top_targ,
+                                top_wght,
+                                gain_func,
+                                depth_left = depth_left - 1
+                        )
+                        self.children[1] = top_child
+                
+                    if len(bot_feat) > 0:
+                        
+                        bot_feat = bot_feat.drop(max_key, axis=1)
+                        bot_targ = target[np.invert(filt)]
+                        
+                        bot_child = TreeNode()
+                        bot_child.train(
+                                bot_feat,
+                                bot_targ,
+                                bot_wght,
+                                gain_func,
+                                depth_left = depth_left - 1
+                        )
+                        self.children[0] = bot_child
+                    
+                    
+                # Split children into nodes by unique elements
+                else:
+                
+                    # Get the unique elements of the maximum gain column
+                    elements = features[max_key].unique()
 
-                    # Train the new child with the subset of targets and
-                    # features, the provided gain function, and decrement the
-                    # depth by 1.
-                    new_child.train(
-                        sub_feat,
-                        sub_targ,
-                        sub_wght,
-                        gain_func,
-                        depth_left = depth_left - 1
-                    )
+                    # Create a new child for every element within the
+                    # gain-iest feature
+                    for e in elements:
+                        new_child = TreeNode()
 
-                    self.children[e] = new_child
+                        # Filter the subset by this element in the column
+                        filt = features[max_key] == e
+
+                        # Subset the features and target off of the filter,
+                        # and drop the maximum gain column
+                        sub_feat = features[filt]
+                        sub_feat = sub_feat.drop(max_key, axis=1)
+                        
+                        sub_targ = target [filt]
+                        sub_wght = weights[filt]
+
+                        # Train the new child with the subset of targets and
+                        # features, the provided gain function, and decrement the
+                        # depth by 1.
+                        new_child.train(
+                            sub_feat,
+                            sub_targ,
+                            sub_wght,
+                            gain_func,
+                            depth_left = depth_left - 1
+                        )
+
+                        self.children[e] = new_child
             
         self.trained=True
         
@@ -361,6 +377,7 @@ class DecisionTree:
             # Find the entropy_func of the target,
             # for calculating information gain later
             targ_ent = entropy_func(target, weights)
+            sum_weights = np.sum(weights)
 
             # Start an empty dict to store gains
             # for every column
@@ -374,23 +391,23 @@ class DecisionTree:
                 # from this
                 col_gain = targ_ent
                 
-                if features[column].dtype in ["int64"]:
+                if features[column].dtype == "int64":
                     
                     median = np.median(features[column])
                     
                     filt = features[column] > median
                     
-                    top_targ = target[filt]
-                    bot_targ = target[np.invert(filt)]
+                    top_targ = target[filt].to_numpy()
+                    bot_targ = target[np.invert(filt)].to_numpy()
                     
-                    top_wght = weights[filt]
-                    bot_wght = weights[np.invert(filt)]
+                    top_wght = weights[filt].to_numpy()
+                    bot_wght = weights[np.invert(filt)].to_numpy()
                     
-                    top_prob = sum(top_wght) / sum(weights)
+                    top_prob = sum(top_wght) / sum_weights
                     top_entr = entropy_func(top_targ, top_wght)
                     top_entr *= top_prob
                     
-                    bot_prob = sum(bot_wght) / sum(weights)
+                    bot_prob = sum(bot_wght) / sum_weights
                     bot_entr = entropy_func(bot_targ, bot_wght)
                     bot_entr *= bot_prob
                     
@@ -412,12 +429,12 @@ class DecisionTree:
                         # Create a data subset of only entries where 
                         # the target column == the unique element
                         filt = features[column] == e
-                        sub_targ = target  [filt]
-                        sub_wght = weights [filt]
+                        sub_targ = target  [filt].to_numpy()
+                        sub_wght = weights [filt].to_numpy()
 
                         # Determine the probability of getting an
                         # entry in this subset
-                        prob = sum(sub_wght) / sum(weights)
+                        prob = sum(sub_wght) / sum_weights
 
                         # Determine the entropy_func of the target
                         # column of the new subset
