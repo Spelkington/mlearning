@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from splearn.DecisionTree.DecisionTree import DecisionTree
 
-class TreeBagger:
+class RandomForest:
 
     def __init__(self):
         '''
@@ -20,7 +20,8 @@ class TreeBagger:
             target: pd.Series,
             num_trees: int,
             seed: int,
-            subset_frac: float = 0.32,
+            feature_frac: float = 0.68,
+            subset_frac: float = 0.68,
             gain = "entropy",
     ):
         '''
@@ -42,6 +43,7 @@ class TreeBagger:
         self.gain = gain
         self.seed = seed
         self.subset_frac = subset_frac
+        self.feature_frac = feature_frac
 
         classes = [0, 1]
         uniques = np.unique(target)
@@ -86,7 +88,14 @@ class TreeBagger:
             sub_feat = self.features.sample(
                 frac = self.subset_frac,
                 random_state = self.seed + len(self),
-                replace = True
+                replace = True,
+                axis = "index"
+            )
+
+            sub_feat = sub_feat.sample(
+                frac = self.feature_frac,
+                random_state = self.seed + len(self),
+                axis="columns"
             )
 
             sub_idx = sub_feat.index

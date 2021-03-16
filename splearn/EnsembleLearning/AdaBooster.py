@@ -86,20 +86,26 @@ class AdaBooster:
             preds = learner.predict(self.features)
             preds.index = self.target.index
 
-            misses = np.invert(preds == self.target).astype(int)
+            hits = (preds == self.target).astype(float)
+            misses = np.invert(preds == self.target).astype(float)
             weighted_error = sum(misses * self.weights) / sum(self.weights)
             total_error    = sum(misses) / len(misses)
 
-            vtwt = np.log( (1 - total_error)    / (total_error))
-            stage = np.log( (1 - weighted_error) / (weighted_error) )
+            vtwt  = 0.5 * np.log( (1 - total_error)    / (total_error) )
+            alpha = 0.5 * np.log( (1 - weighted_error) / (weighted_error) )
 
             self.learners.append(learner)
-            self.votes.append(vtwt)
+            self.votes.append(alpha)
 
-            for i in self.target.index:
-                self.weights[i] = self.weights[i] * np.exp(misses[i] * np.abs(stage) * learning_rate)
+            misses = (misses - 0.5) * 2
+            multipliers = np.exp(misses * alpha)
+
+            self.weights *= multipliers
 
             self.weights = self.weights / sum(self.weights)
+
+    def __len__(self):
+        return len(self.learners)
 
     def predict(
         self,

@@ -372,7 +372,11 @@ class DecisionTree:
               
         '''
         
-        def gains_func(features, target, weights):
+        def gains_func(
+            features: pd.DataFrame,
+            target: pd.Series,
+            weights: pd.Series
+        ):
 
             # Find the entropy_func of the target,
             # for calculating information gain later
